@@ -1,0 +1,52 @@
+# ============================================================
+# zebra-ops 配置文件模板
+# 复制为 config.yaml 后填入实际值
+# 密钥建议通过环境变量注入（优先级高于此文件）
+# ============================================================
+
+# ---------- GoFrame 服务配置 ----------
+# https://goframe.org/docs/web/server-config-file-template
+server:
+  address: ":6872"              # HTTP 监听端口
+  openapiPath: "/api.json"      # GoFrame 自动生成的 API 文档路径
+  swaggerPath: "/swagger"       # Swagger UI 路径
+
+# https://goframe.org/docs/core/glog-config
+logger:
+  level: "all"                  # 日志级别：debu/info/warn/err/all
+  stdout: true                  # 是否输出到标准输出
+
+# ---------- LLM 模型配置 ----------
+# 火山方舟 DeepSeek-V4-flash（Think 模型：强推理，用于规划）
+think_chat_model:
+  api_key: ""                   # 环境变量: THINK_CHAT_MODEL_API_KEY
+  base_url: "https://ark.cn-beijing.volces.com/api/v3"
+  model: "DeepSeek-V4-flash"
+
+# 火山方舟 DeepSeek-V4-flash（Quick 模型：低延迟，用于工具调用）
+quick_chat_model:
+  api_key: ""                   # 环境变量: QUICK_CHAT_MODEL_API_KEY
+  base_url: "https://ark.cn-beijing.volces.com/api/v3"
+  model: "DeepSeek-V4-flash"
+
+# ---------- Embedding 模型配置 ----------
+# 阿里百炼 text-embedding-v4（2048 维，需 DashScope API Key）
+embedding_model:
+  api_key: ""                   # 环境变量: EMBEDDING_MODEL_API_KEY（sk- 开头）
+  base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  model: "text-embedding-v4"
+
+# ---------- 存储配置 ----------
+# 上传文件落盘目录（与知识库种子文档 docs/ 分离）
+file_dir: "./storage/uploads"   # 环境变量: FILE_DIR
+
+# ---------- Milvus 向量库 ----------
+milvus_url: "localhost:19530"   # 环境变量: MILVUS_URL
+
+# ---------- MCP 配置 ----------
+# CLS 日志查询 MCP 服务端点（本地 stdio 模式需设置 TRANSPORT=sse）
+mcp_url: "http://localhost:3000/sse"
+
+# ---------- Prometheus 配置 ----------
+# Prometheus HTTP API 地址（用于查询活跃告警）
+prometheus_url: ""              # 环境变量: PROMETHEUS_URL（如 http://localhost:9090）

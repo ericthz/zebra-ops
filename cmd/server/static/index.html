@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zebra Ops AI 助手</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="stylesheet" href="css/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css" id="hljs-theme">
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/es/highlight.min.js"></script>
+    <script>
+    // 主题初始化（防止闪烁）
+    (function(){
+        var saved = localStorage.getItem('zebra_theme');
+        var theme = saved || 'dark';
+        document.documentElement.dataset.theme = theme;
+        updateHljsTheme(theme);
+        function updateHljsTheme(t) {
+            var link = document.getElementById('hljs-theme');
+            if (link) {
+                link.href = t === 'dark'
+                    ? 'https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css'
+                    : 'https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css';
+            }
+        }
+    })();
+    </script>
+</head>
+<body>
+    <div class="app-layout">
+        <!-- 左侧边栏 -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <b>会话历史</b>
+                <button class="icon-btn" id="newChatBtn" title="新建会话" data-ic-prepend="plus" data-ic-size="14">
+                    新建
+                </button>
+            </div>
+            <div class="sidebar-content" id="chatHistoryList">
+                <!-- 历史对话列表将在这里动态生成 -->
+            </div>
+        </aside>
+        <div class="backdrop" id="backdrop" onclick="closeDrawers()"></div>
+
+        <!-- 主内容区域 -->
+        <div class="main-content">
+            <header class="header">
+                <button class="hamb" id="hambBtn" onclick="toggleSidebar()" title="会话列表" style="display:none" data-ic="menu" data-ic-size="18">
+                </button>
+                <div class="brand">
+                    <span class="mark" data-ic="logo" data-ic-size="26"></span>
+                    Zebra Ops AI 助手
+                </div>
+                <div class="status">
+                    <span class="dot" id="dot"></span>
+                    <span id="statusText">就绪</span>
+                </div>
+                <div class="headbtns">
+                    <button class="upload-top-btn" id="uploadTopBtn" data-ic-prepend="upload" data-ic-size="16">
+                        上传文档
+                    </button>
+                    <button class="ai-ops-top-btn" id="aiOpsSidebarBtn" style="position:static" data-ic-prepend="sparkles" data-ic-size="16">
+                        AI Ops
+                    </button>
+                    <button id="themeBtn" class="icon-btn head-pill-btn" onclick="toggleTheme()" title="切换主题">
+                        亮色
+                    </button>
+                </div>
+            </header>
+
+            <main class="chat-container">
+                <div class="chat-messages" id="chatMessages">
+                    <div class="welcome-greeting" id="welcomeGreeting">
+                        <p class="big">Zebra Ops AI 助手</p>
+                        智能运维助手<br>
+                        支持工具调用 · RAG 知识库 · 告警分析<br>
+                        输入问题开始对话，Enter 发送
+                    </div>
+                </div>
+            </main>
+
+            <div class="chat-input-container">
+                <div class="input-group-wrapper">
+                    <div class="input-wrapper">
+                        <input type="text" id="messageInput" placeholder="输入你的问题…（Enter 发送）" maxlength="1000" class="message-input">
+                        <div class="input-bottom-bar">
+                            <div class="right-actions">
+                                <div class="mode-selector-wrapper">
+                                    <button class="mode-selector-btn" id="modeSelectorBtn">
+                                        <span id="currentModeText">快速</span>
+                                        <span class="dropdown-arrow" data-ic="chevron-down" data-ic-size="16"></span>
+                                    </button>
+                                    <div class="mode-dropdown" id="modeDropdown">
+                                        <div class="dropdown-header">选择对话方式</div>
+                                        <div class="dropdown-item active" data-mode="quick">
+                                            <div class="dropdown-item-main">
+                                                <span>快速</span>
+                                                <span class="badge-new">新</span>
+                                            </div>
+                                            <div class="dropdown-item-sub">快速对话</div>
+                                        </div>
+                                        <div class="dropdown-item" data-mode="stream">
+                                            <div class="dropdown-item-main">
+                                                <span>流式</span>
+                                            </div>
+                                            <div class="dropdown-item-sub">流式对话</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <button class="send-btn-circle" id="sendButton" title="发送" data-ic="send" data-ic-size="20">
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <input type="file" id="fileInput" accept=".txt,.md,.markdown" style="display: none;">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 加载遮罩层 -->
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">AI 运维分析中，请稍候...</div>
+            <div class="loading-subtext">后端正在处理，请耐心等待</div>
+        </div>
+    </div>
+
+    <script src="js/icons.js"></script>
+    <script src="js/app.js"></script>
+    <script src="js/markdown.js"></script>
+    <script src="js/chat.js"></script>
+    <script src="js/history.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/upload.js"></script>
+    <script src="js/aiops.js"></script>
+    <script src="js/init.js"></script>
+    <script>
+    // ---- 亮/暗主题 ----
+    function initTheme() {
+        var saved = localStorage.getItem('zebra_theme');
+        var theme = saved || 'dark';
+        applyTheme(theme);
+    }
+    function applyTheme(t) {
+        document.documentElement.dataset.theme = t;
+        localStorage.setItem('zebra_theme', t);
+        var btn = document.getElementById('themeBtn');
+        if (btn) btn.innerHTML = t === 'dark' ? ic('sun', 14) + ' 亮色' : ic('moon', 14) + ' 暗色';
+        // 更新代码高亮主题
+        var link = document.getElementById('hljs-theme');
+        if (link) {
+            link.href = t === 'dark'
+                ? 'https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css'
+                : 'https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css';
+        }
+    }
+    function toggleTheme() {
+        applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+    }
+    // 初始化主题
+    initTheme();
+
+    // ---- 移动端响应式 ----
+    function checkMobile() {
+        var hamb = document.getElementById('hambBtn');
+        if (hamb) hamb.style.display = window.innerWidth <= 768 ? 'inline-flex' : 'none';
+    }
+    window.addEventListener('resize', checkMobile);
+    checkMobile();
+
+    function closeDrawers() {
+        document.getElementById('sidebar').classList.remove('open');
+        document.getElementById('backdrop').classList.remove('show');
+    }
+    function toggleSidebar() {
+        var sb = document.getElementById('sidebar');
+        sb.classList.toggle('open');
+        document.getElementById('backdrop').classList.toggle('show', sb.classList.contains('open'));
+    }
+    </script>
+</body>
+</html>

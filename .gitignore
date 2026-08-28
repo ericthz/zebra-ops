@@ -29,4 +29,15 @@ go.work.sum
 
 # Editor/IDE
 # .idea/
-# .vscode/
+.vscode/
+
+manifest/config/config.yaml
+
+# 运行时产物
+storage/
+logs/
+manifest/deploy/milvus/volumes/
+mock/alerts.json
+
+# 编译产物
+/server

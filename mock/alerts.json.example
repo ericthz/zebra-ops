@@ -1,0 +1,78 @@
+{
+  "status": "success",
+  "data": {
+    "alerts": [
+      {
+        "labels": {
+          "alertname": "服务下线",
+          "instance": "10.0.0.11:9100",
+          "job": "node-exporter",
+          "severity": "critical",
+          "host": "prod-api-01",
+          "service": "billing-service"
+        },
+        "annotations": {
+          "summary": "服务 billing-service 下线",
+          "description": "billing-service 在 prod-api-01 上无法访问，怀疑服务 panic 导致 pod 重启，请按手册搜索最近 1 小时 panic 日志定位根因。日志主题地域 ap-guangzhou，主题 id 869830db-a055-4479-963b-3c898d27e755。"
+        },
+        "state": "firing",
+        "activeAt": "2026-08-28T13:20:11.123456789Z",
+        "value": "1e+00"
+      },
+      {
+        "labels": {
+          "alertname": "接口失败率过高",
+          "instance": "10.0.0.12:9100",
+          "job": "node-exporter",
+          "severity": "warning",
+          "host": "prod-api-02",
+          "service": "order-service",
+          "api": "/api/order/create"
+        },
+        "annotations": {
+          "summary": "接口 /api/order/create 失败率过高",
+          "description": "order-service 接口 /api/order/create 最近 5 分钟失败率超过 20%，请按手册根据接口名和 response 关键词搜索最近 1 小时日志，结合 error 分析失败原因。日志主题地域 ap-guangzhou，主题 id 869830db-a055-4479-963b-3c898d27e755。"
+        },
+        "state": "firing",
+        "activeAt": "2026-08-28T13:35:00.000000000Z",
+        "value": "1e+00"
+      },
+      {
+        "labels": {
+          "alertname": "与下游对账发现差异",
+          "instance": "10.0.0.13:9100",
+          "job": "node-exporter",
+          "severity": "warning",
+          "host": "prod-api-03",
+          "service": "settlement-service"
+        },
+        "annotations": {
+          "summary": "与下游对账发现差异",
+          "description": "settlement-service 与下游对账发现差异，可能是数据同步异常或计算错误导致，请按手册以 error 和 reconciliation 为关键词搜索最近 1 小时日志分析根因。日志主题地域 ap-guangzhou，主题 id 869830db-a055-4479-963b-3c898d27e755。"
+        },
+        "state": "firing",
+        "activeAt": "2026-08-28T13:40:00.000000000Z",
+        "value": "1e+00"
+      },
+      {
+        "labels": {
+          "alertname": "发现服务地域与资源地域不匹配",
+          "instance": "10.0.0.14:9100",
+          "job": "node-exporter",
+          "severity": "warning",
+          "host": "prod-api-04",
+          "service": "billing-service"
+        },
+        "annotations": {
+          "summary": "发现服务地域与资源地域不匹配",
+          "description": "计费数据处理中发现部分业务因使用错误的 MQ 队列把资源事件错投递到其他地域，导致资源所在地域与计费服务地域不匹配，请按手册以 region mismatch 为关键词搜索最近 1 小时日志，汇总调用方和错误地域名。日志主题地域 ap-guangzhou，主题 id 869830db-a055-4479-963b-3c898d27e755。"
+        },
+        "state": "firing",
+        "activeAt": "2026-08-28T13:45:00.000000000Z",
+        "value": "1e+00"
+      }
+    ]
+  },
+  "error": null,
+  "errorType": null
+}

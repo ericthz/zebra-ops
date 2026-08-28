@@ -1,0 +1,6 @@
+.git
+temp
+storage
+frontend
+.DS_Store
+*.test
