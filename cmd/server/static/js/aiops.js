@@ -17,6 +17,10 @@ ZebraOpsApp.prototype.triggerAIOps = async function () {
 
     const loadingMessage = this.addLoadingMessage('分析中...');
     this.currentAIOpsMessage = loadingMessage;
+    this.currentAIOpsStatus = null;
+    this.currentAIOpsLog = null;
+    // 改造为流式布局：状态行 + 固定高度活动日志（避免气泡随内容伸缩导致页面抖动）
+    this._setupAIOpsStreaming(loadingMessage);
 
     this.isStreaming = true;
     this.updateUI();
@@ -41,6 +45,8 @@ ZebraOpsApp.prototype.triggerAIOps = async function () {
     } finally {
         this.isStreaming = false;
         this.currentAIOpsMessage = null;
+        this.currentAIOpsStatus = null;
+        this.currentAIOpsLog = null;
         this.updateUI();
         // 仅在未处于错误状态时复位为就绪，避免覆盖错误提示
         if (!hasError) {
@@ -91,10 +97,10 @@ ZebraOpsApp.prototype.sendAIOpsRequest = async function (loadingMessageElement) 
                     } else if (line.startsWith('data: ')) {
                         const data = line.substring(6);
                         if (currentEvent === 'status') {
-                            this._updateAIOpsProgress(loadingMessageElement, data);
+                            this._setAIOpsStatus(data);
                         } else if (currentEvent === 'step') {
                             details.push(this._extractText(data));
-                            this._updateAIOpsProgress(loadingMessageElement, data);
+                            this._appendAIOpsStep(data);
                         } else if (currentEvent === 'done') {
                             const payload = JSON.parse(data);
                             const report = payload.report || '';
@@ -129,27 +135,65 @@ ZebraOpsApp.prototype._extractText = function (data) {
 };
 
 /**
- * _updateAIOpsProgress - 更新加载消息上的进度文案（显示当前执行步骤）
+ * _setupAIOpsStreaming - 将加载消息改造为流式分析布局：状态行 + 固定高度活动日志
  */
-ZebraOpsApp.prototype._updateAIOpsProgress = function (messageElement, data) {
+ZebraOpsApp.prototype._setupAIOpsStreaming = function (messageElement) {
     if (!messageElement) return;
     const messageContent = messageElement.querySelector('.message-content');
     if (!messageContent) return;
 
-    let text = this._extractText(data);
+    messageContent.classList.remove('loading-message-content');
+    messageContent.classList.add('aiops-streaming');
+    messageContent.innerHTML = '';
+
+    const statusLine = document.createElement('div');
+    statusLine.className = 'aiops-status-line';
+    statusLine.innerHTML = `
+        <span class="loading-spinner-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" fill="currentColor" opacity="0.2"/>
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10c1.54 0 3-.36 4.28-1l-1.5-2.6C13.64 19.62 12.84 20 12 20c-4.41 0-8-3.59-8-8s3.59-8 8-8c.84 0 1.64.38 2.18 1l1.5-2.6C13 2.36 12.54 2 12 2z" fill="currentColor"/>
+            </svg>
+        </span>
+        <span class="aiops-status-text">AI 运维分析中...</span>
+    `;
+
+    const log = document.createElement('div');
+    log.className = 'aiops-stream-log';
+
+    messageContent.appendChild(statusLine);
+    messageContent.appendChild(log);
+
+    this.currentAIOpsStatus = statusLine.querySelector('.aiops-status-text');
+    this.currentAIOpsLog = log;
+};
+
+/**
+ * _setAIOpsStatus - 更新状态行文案
+ */
+ZebraOpsApp.prototype._setAIOpsStatus = function (data) {
+    if (!this.currentAIOpsStatus) return;
+    const text = this._extractText(data);
+    if (text) {
+        this.currentAIOpsStatus.textContent = text;
+    }
+};
+
+/**
+ * _appendAIOpsStep - 向活动日志追加一条步骤（完整内容），并仅滚动日志内部到底部
+ */
+ZebraOpsApp.prototype._appendAIOpsStep = function (data) {
+    if (!this.currentAIOpsLog) return;
+    const text = this._extractText(data);
     if (!text) return;
 
-    // 步骤明细较长时仅展示首行并截断，避免气泡过长
-    const firstLine = text.split('\n')[0].trim();
-    const shortText = firstLine.length > 60 ? firstLine.substring(0, 60) + '…' : firstLine;
+    const entry = document.createElement('div');
+    entry.className = 'aiops-log-entry';
+    entry.textContent = text;
 
-    const textSpan = messageContent.querySelector('span');
-    if (textSpan) {
-        textSpan.textContent = '分析中... ' + shortText;
-    } else {
-        messageContent.textContent = '分析中... ' + shortText;
-    }
-    this.scrollToBottom();
+    this.currentAIOpsLog.appendChild(entry);
+    // 只滚动日志面板内部，避免触发页面级滚动导致整体抖动
+    this.currentAIOpsLog.scrollTop = this.currentAIOpsLog.scrollHeight;
 };
 
 /**
@@ -170,7 +214,13 @@ ZebraOpsApp.prototype.updateAIOpsMessage = function (messageElement, response, d
     if (!messageContent) return;
 
     messageContent.classList.remove('loading-message-content');
+    messageContent.classList.remove('aiops-streaming');
     messageContent.textContent = '';
+    // 清除进度展示时设置的滚动/换行样式，使最终报告完整展开
+    messageContent.style.whiteSpace = '';
+    messageContent.style.wordBreak = '';
+    messageContent.style.maxHeight = '';
+    messageContent.style.overflowY = '';
 
     const loadingIcon = messageContent.querySelector('.loading-spinner-icon');
     if (loadingIcon) loadingIcon.remove();

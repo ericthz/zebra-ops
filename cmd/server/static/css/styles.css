@@ -1162,6 +1162,56 @@ main {
     border: 1px solid rgba(86, 134, 254, .25);
 }
 
+/* AI 运维流式分析面板：状态行 + 固定高度活动日志 */
+.aiops-streaming {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+}
+
+.aiops-status-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: .9rem;
+    color: var(--accent);
+    font-weight: 500;
+    line-height: 1.4;
+}
+
+.aiops-status-line .loading-spinner-icon {
+    flex-shrink: 0;
+}
+
+/* 固定高度活动日志：内部滚动，避免页面随内容伸缩抖动 */
+.aiops-stream-log {
+    max-height: 280px;
+    min-height: 60px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: var(--panel);
+    border: 1px solid rgba(86, 134, 254, .25);
+    border-radius: 10px;
+    padding: 4px 0;
+    font-size: .8rem;
+    line-height: 1.55;
+    scrollbar-width: thin;
+}
+
+.aiops-log-entry {
+    padding: 6px 12px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    color: var(--text);
+    border-bottom: 1px solid rgba(128, 128, 128, .08);
+}
+
+.aiops-log-entry:last-child {
+    border-bottom: none;
+}
+
 /* 详情折叠区域 */
 .aiops-details {
     margin-bottom: 16px;

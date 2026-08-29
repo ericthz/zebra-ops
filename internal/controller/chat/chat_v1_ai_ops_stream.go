@@ -35,7 +35,7 @@ func (c *ControllerV1) AIOpsStream(ctx context.Context, req *v1.AIOpsStreamReq) 
 	const maxAttempts = 3
 	var finalResp string
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		client.SendToClient("status", sseJSON(map[string]string{"text": fmt.Sprintf("开始 AI 运维分析（第 %d 次尝试）...", attempt)}))
+		client.SendToClient("status", sseJSON(map[string]string{"text": "开始执行 AI 运维分析..."}))
 		var resp string
 		var aerr error
 		resp, _, aerr = plan_execute_replan.BuildPlanAgentStream(ctx, query, func(step string) {
@@ -46,7 +46,7 @@ func (c *ControllerV1) AIOpsStream(ctx context.Context, req *v1.AIOpsStreamReq) 
 			break
 		}
 		if attempt < maxAttempts {
-			client.SendToClient("status", sseJSON(map[string]string{"text": fmt.Sprintf("本次执行失败(%v)，自动重试...", aerr)}))
+			client.SendToClient("status", sseJSON(map[string]string{"text": "执行过程中出现异常，正在自动重试..."}))
 		} else {
 			client.SendToClient("error", sseJSON(map[string]string{"text": fmt.Sprintf("AI 运维分析失败: %v", aerr)}))
 			return &v1.AIOpsStreamRes{}, nil
