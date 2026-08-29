@@ -21,4 +21,6 @@ type IChatV1 interface {
 	FileUpload(ctx context.Context, req *v1.FileUploadReq) (res *v1.FileUploadRes, err error)
 	// AIOps AI 运维分析，处理告警并返回诊断结果
 	AIOps(ctx context.Context, req *v1.AIOpsReq) (res *v1.AIOpsRes, err error)
+	// AIOpsStream AI 运维流式分析，通过 SSE 实时推送进度与报告
+	AIOpsStream(ctx context.Context, req *v1.AIOpsStreamReq) (res *v1.AIOpsStreamRes, err error)
 }

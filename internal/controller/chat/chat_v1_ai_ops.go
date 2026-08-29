@@ -11,10 +11,9 @@ import (
 	"github.com/ericthz/zebra-ops/internal/memory"
 )
 
-// AIOps 智能运维分析接口：调用 Plan Agent 分析活跃告警并生成运维报告
-func (c *ControllerV1) AIOps(ctx context.Context, req *v1.AIOpsReq) (res *v1.AIOpsRes, err error) {
-	// 构建告警分析的 Agent 查询指令，包含获取告警、查询文档、分析根因、生成报告的完整流程
-	query := `
+// aiOpsPrompt 构建告警分析的 Agent 查询指令，包含获取告警、查询文档、分析根因、生成报告的完整流程
+func aiOpsPrompt() string {
+	return `
 "1. 你是一个智能的服务告警分析助手,首先调用工具query_prometheus_alerts获取所有活跃的告警。"
 "2. 分别根据告警的名称调用工具query_internal_docs，获取告警名对应的处理方案。"
 "3. 完全遵循内部文档的内容进行查询和分析,不允许使用文档外的任何信息。"
@@ -30,6 +29,11 @@ func (c *ControllerV1) AIOps(ctx context.Context, req *v1.AIOpsReq) (res *v1.AIO
 ## 处理方案执行N(第N个告警)
 ## 结论
 `
+}
+
+// AIOps 智能运维分析接口：调用 Plan Agent 分析活跃告警并生成运维报告
+func (c *ControllerV1) AIOps(ctx context.Context, req *v1.AIOpsReq) (res *v1.AIOpsRes, err error) {
+	query := aiOpsPrompt()
 
 	// 调用 Plan Agent 执行告警分析。
 	// 4b 本地小模型存在偶发不稳定（规划器不产出工具调用、工具调用 XML 格式错误等），

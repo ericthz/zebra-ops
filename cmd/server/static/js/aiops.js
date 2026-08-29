@@ -50,11 +50,11 @@ ZebraOpsApp.prototype.triggerAIOps = async function () {
 };
 
 /**
- * sendAIOpsRequest - 发送 AI 运维请求到后端
+ * sendAIOpsRequest - 通过 SSE 流式接收 AI 运维分析进度与最终报告
  */
 ZebraOpsApp.prototype.sendAIOpsRequest = async function (loadingMessageElement) {
     try {
-        const response = await fetch(`${this.apiBaseUrl}/ai_ops`, {
+        const response = await fetch(`${this.apiBaseUrl}/ai_ops_stream`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ Id: this.sessionId })
@@ -64,17 +64,92 @@ ZebraOpsApp.prototype.sendAIOpsRequest = async function (loadingMessageElement) 
             throw new Error(`HTTP错误: ${response.status}`);
         }
 
-        const data = await response.json();
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let currentEvent = '';
+        let details = [];
 
-        if (data.message === 'OK' && data.data) {
-            const responseText = data.data.result || '';
-            this.updateAIOpsMessage(loadingMessageElement, responseText, data.data.detail || []);
-        } else {
-            throw new Error(data.message || '未知错误');
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) {
+                    break;
+                }
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+
+                for (const line of lines) {
+                    if (line.trim() === '') continue;
+
+                    if (line.startsWith('id: ')) {
+                        continue;
+                    } else if (line.startsWith('event: ')) {
+                        currentEvent = line.substring(7);
+                    } else if (line.startsWith('data: ')) {
+                        const data = line.substring(6);
+                        if (currentEvent === 'status') {
+                            this._updateAIOpsProgress(loadingMessageElement, data);
+                        } else if (currentEvent === 'step') {
+                            details.push(this._extractText(data));
+                            this._updateAIOpsProgress(loadingMessageElement, data);
+                        } else if (currentEvent === 'done') {
+                            const payload = JSON.parse(data);
+                            const report = payload.report || '';
+                            this.updateAIOpsMessage(loadingMessageElement, report, details);
+                            return;
+                        } else if (currentEvent === 'error') {
+                            throw new Error(this._extractText(data));
+                        }
+                    }
+                }
+            }
+        } finally {
+            reader.releaseLock();
         }
+
+        // 流异常结束（无 done 事件）视为失败
+        throw new Error('分析流意外中断，未收到最终报告');
     } catch (error) {
         throw error;
     }
+};
+
+/**
+ * _extractText - 从 SSE data（JSON 对象）中提取 text 字段，失败时返回原文
+ */
+ZebraOpsApp.prototype._extractText = function (data) {
+    try {
+        return JSON.parse(data).text || '';
+    } catch (e) {
+        return data;
+    }
+};
+
+/**
+ * _updateAIOpsProgress - 更新加载消息上的进度文案（显示当前执行步骤）
+ */
+ZebraOpsApp.prototype._updateAIOpsProgress = function (messageElement, data) {
+    if (!messageElement) return;
+    const messageContent = messageElement.querySelector('.message-content');
+    if (!messageContent) return;
+
+    let text = this._extractText(data);
+    if (!text) return;
+
+    // 步骤明细较长时仅展示首行并截断，避免气泡过长
+    const firstLine = text.split('\n')[0].trim();
+    const shortText = firstLine.length > 60 ? firstLine.substring(0, 60) + '…' : firstLine;
+
+    const textSpan = messageContent.querySelector('span');
+    if (textSpan) {
+        textSpan.textContent = '分析中... ' + shortText;
+    } else {
+        messageContent.textContent = '分析中... ' + shortText;
+    }
+    this.scrollToBottom();
 };
 
 /**

@@ -138,7 +138,8 @@ FileLoader ──> MarkdownSplitter（按 # 标题切分，uuid 生成 ID）─�
 | POST | `/api/chat` | `{ Id, Question }` | `{ answer }` | 快速对话（RAG + ReAct） |
 | POST | `/api/chat_stream` | `{ Id, Question }` | SSE 事件流 | 流式对话（事件：`connected` / `message` / `done` / `error`） |
 | POST | `/api/upload` | multipart（`file`） | `{ fileName, filePath, fileSize }` | 文档上传建库（覆盖更新） |
-| POST | `/api/ai_ops` | `{ Id }` | `{ result, detail[] }` | AI 告警分析（Plan Agent） |
+| POST | `/api/ai_ops` | `{ Id }` | `{ result, detail[] }` | AI 告警分析（同步） |
+| POST | `/api/ai_ops_stream` | `{ Id }` | SSE 事件流（`status`/`step`/`done`/`error`） | AI 告警分析（SSE 实时进度 + 报告） |
 | GET | `/healthz` | - | `ok` | 存活探针 |
 | GET | `/readyz` | - | `ok` / 503 | 就绪探针（探测 Milvus） |
 | GET | `/metrics` | - | Prometheus 文本 | 指标输出 |

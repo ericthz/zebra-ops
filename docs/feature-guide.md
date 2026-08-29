@@ -94,15 +94,16 @@ Zebra Ops AI 助手是一个**智能运维助手**，围绕「对话 + 知识库
 ```
 点击 AI Ops
   → 强制 newChat()（新建会话、清空当前对话）
-  → 显示「分析中」遮罩
-  → POST /api/ai_ops {Id}
+  → 显示「分析中」遮罩，实时展示当前进度
+  → POST /api/ai_ops_stream {Id}（SSE）
   → 后端 Plan-Execute-RePlan Agent：
       ① query_prometheus_alerts 拉活跃告警
       ② 按告警名 query_internal_docs 查处理方案（仅限文档内信息）
       ③ get_current_time / 日志工具（地域+日志主题）补全上下文
       ④ 汇总生成《告警分析报告》
+  → SSE 实时推送 step 进度事件（前端更新「分析中... 当前步骤」）
   → 报告写入后端会话记忆（同一会话内可追问引用）
-  → 前端渲染报告 + 「查看详细步骤 (N条)」折叠明细
+  → 前端收到 done 事件，渲染报告 + 「查看详细步骤 (N条)」折叠明细
 ```
 > 每次点击的**前端流程一致**；后端结果取决于**当前时刻活跃告警**与 LLM 输出，非固定。
 

@@ -51,3 +51,13 @@ type AIOpsRes struct {
 	Result string   `json:"result"` // 整体分析结论
 	Detail []string `json:"detail"` // 各告警的详细分析信息
 }
+
+// AIOpsStreamReq AI 运维流式请求，通过 SSE 推送分析进度与最终报告
+type AIOpsStreamReq struct {
+	g.Meta `path:"/ai_ops_stream" method:"post" summary:"AI运维(SSE)"`
+	Id     string `json:"id" dc:"会话ID，用于将分析报告写入后端记忆以便后续追问"` // 会话ID
+}
+
+// AIOpsStreamRes AI 运维流式响应（实际通过 SSE 推送，此处为空结构体）
+type AIOpsStreamRes struct {
+}

@@ -9,7 +9,7 @@
 | 快速对话 | 请求-响应式对话，RAG 检索增强 + ReAct Agent 工具调用 | `POST /api/chat` |
 | 流式对话 | SSE 逐 token 输出 | `POST /api/chat_stream` |
 | 知识库管理 | 上传文档自动切分、向量化、入库，同源文件覆盖更新 | `POST /api/upload` |
-| AI 运维分析 | 拉取告警 → 检索处理手册 → 查询关联日志 → 生成结构化报告 | `POST /api/ai_ops` |
+| AI 运维分析 | 拉取告警 → 检索处理手册 → 查询关联日志 → 生成结构化报告（SSE 实时进度） | `POST /api/ai_ops_stream` |
 | Agent 工具集 | 时间 / 内部文档检索 / 腾讯云 CLS 日志 MCP / Prometheus 告警 | ReAct 与 Plan-Execute-RePlan 内 |
 
 ## 系统架构
@@ -138,7 +138,8 @@ zebra-ops
 | POST | `/api/chat` | `{ Id, Question }` | `{ answer }` | 快速对话（RAG + ReAct） |
 | POST | `/api/chat_stream` | `{ Id, Question }` | SSE 事件流 | 流式对话（事件：`connected` / `message` / `done` / `error`） |
 | POST | `/api/upload` | multipart（`file`） | `{ fileName, filePath, fileSize }` | 文档上传建库（覆盖更新） |
-| POST | `/api/ai_ops` | `{ Id }` | `{ result, detail[] }` | AI 告警分析（Plan Agent） |
+| POST | `/api/ai_ops` | `{ Id }` | `{ result, detail[] }` | AI 告警分析（同步，Plan Agent） |
+| POST | `/api/ai_ops_stream` | `{ Id }` | SSE 事件流 | AI 告警分析（SSE 实时进度 + 报告） |
 | GET | `/healthz` | - | `ok` | 存活探针 |
 | GET | `/readyz` | - | `ok` / 503 | 就绪探针（短超时探测 Milvus） |
 | GET | `/metrics` | - | Prometheus 文本 | 指标输出 |

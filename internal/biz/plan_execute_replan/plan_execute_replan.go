@@ -45,6 +45,12 @@ func cleanDetail(raw string) string {
 // 它依次创建规划器、执行器、重规划器，组合为 PlanExecuteAgent，
 // 然后将用户查询提交执行，迭代获取事件流，最终返回最后一条消息的文本内容及各步骤详情。
 func BuildPlanAgent(ctx context.Context, query string) (string, []string, error) {
+	return BuildPlanAgentStream(ctx, query, nil)
+}
+
+// BuildPlanAgentStream 在 BuildPlanAgent 基础上支持流式进度回调。
+// onStep 会在每次产出步骤明细时被调用（可为 nil），用于 SSE 实时推送进度。
+func BuildPlanAgentStream(ctx context.Context, query string, onStep func(step string)) (string, []string, error) {
 	// 创建规划器 Agent
 	planAgent, err := NewPlanner(ctx)
 	if err != nil {
@@ -95,7 +101,11 @@ func BuildPlanAgent(ctx context.Context, query string) (string, []string, error)
 				continue
 			}
 			lastMessage = msg
-			detail = append(detail, cleanDetail(msg.String()))
+			cleaned := cleanDetail(msg.String())
+			detail = append(detail, cleaned)
+			if onStep != nil {
+				onStep(cleaned)
+			}
 			// 重规划器通过 respond 工具输出最终报告，内容为 {"response":"..."}，
 			// 优先提取该字段作为最终结果，避免返回中间的步骤消息
 			if resp := extractRespond(msg.Content); resp != "" {
