@@ -33,11 +33,20 @@ go.work.sum
 
 manifest/config/config.yaml
 
-# 运行时产物
+# Runtime artifacts
 storage/
 logs/
 manifest/deploy/milvus/volumes/
 mock/alerts.json
 
-# 编译产物
+# Build output
 /server
+
+# OS artifacts
+.DS_Store
+
+# WorkBuddy workspace (analysis/memory and other non-project artifacts)
+.workbuddy/
+
+# Private docs (local only, not committed)
+docs/private/

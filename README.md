@@ -1,240 +1,242 @@
-# zebra-ops
+# Zebra Ops
 
-基于 **GoFrame v2** 与 **cloudwego/eino** AI 编排框架构建的运维助手服务，提供 RAG 知识库对话、文档向量化建库、以及基于 Plan-Execute-RePlan 多轮 Agent 的告警分析三类能力。
+English | [简体中文](./README.zh-CN.md)
 
-## 功能特性
+Zebra Ops is an operations assistant service built on **GoFrame v2** and the **cloudwego/eino** AI orchestration framework. It provides three capabilities: RAG knowledge-base Q&A, document vectorization/indexing, and Plan-Execute-RePlan multi-turn Agent-based alert analysis.
 
-| 能力 | 说明 | 入口 |
+## Features
+
+| Capability | Description | Endpoint |
 |---|---|---|
-| 快速对话 | 请求-响应式对话，RAG 检索增强 + ReAct Agent 工具调用 | `POST /api/chat` |
-| 流式对话 | SSE 逐 token 输出 | `POST /api/chat_stream` |
-| 知识库管理 | 上传文档自动切分、向量化、入库，同源文件覆盖更新 | `POST /api/upload` |
-| AI 运维分析 | 拉取告警 → 检索处理手册 → 查询关联日志 → 生成结构化报告（SSE 实时进度） | `POST /api/ai_ops_stream` |
-| Agent 工具集 | 时间 / 内部文档检索 / 腾讯云 CLS 日志 MCP / Prometheus 告警 | ReAct 与 Plan-Execute-RePlan 内 |
+| Quick chat | Request-response chat with RAG retrieval augmentation + ReAct Agent tool calls | `POST /api/chat` |
+| Streaming chat | SSE token-by-token output | `POST /api/chat_stream` |
+| Knowledge base management | Upload documents → auto split, vectorize, index; same-source file overwrite update | `POST /api/upload` |
+| AI ops analysis | Fetch alerts → retrieve runbooks → query related logs → generate structured report (SSE real-time progress) | `POST /api/ai_ops_stream` |
+| Agent toolset | Time / internal doc retrieval / Tencent Cloud CLS log MCP / Prometheus alerts | Inside ReAct and Plan-Execute-RePlan |
 
-## 系统架构
+## System Architecture
 
-### 分层与请求链路
+### Layers & request flow
 
 ```
-HTTP 请求
-  → middleware（CORS → RequestID → AccessLog → Metrics → Response）
-  → controller/chat（DTO 校验）
-  → service（业务编排）
-  → biz（AI 管线：chat_pipeline / knowledge_index_pipeline / plan_execute_replan）
-  → components（llm / embedder / vectorstore / loader / tools）
+HTTP request
+  → middleware (CORS → RequestID → AccessLog → Metrics → Response)
+  → controller/chat (DTO validation)
+  → service (business orchestration)
+  → biz (AI pipelines: chat_pipeline / knowledge_index_pipeline / plan_execute_replan)
+  → components (llm / embedder / vectorstore / loader / tools)
 ```
 
-- 统一响应封装：`{ "message": "...", "data": { ... } }`（`internal/middleware/middleware.go`）。
-- 配置读取：GoFrame 配置组件（`g.Cfg().GetEffective`），密钥不进入版本库。
+- Unified response envelope: `{ "message": "...", "data": { ... } }` (`internal/middleware/middleware.go`).
+- Config loading: GoFrame config component (`g.Cfg().GetEffective`); secrets do not enter the repo.
 
-### 对话流水线 `internal/biz/chat_pipeline`
+### Chat pipeline `internal/biz/chat_pipeline`
 
-Eino 有向图（`orchestration.go` 的 `BuildChatAgent`）：
+Eino directed graph (`BuildChatAgent` in `orchestration.go`):
 
 ```
 START
  ├─ InputToRag ──> MilvusRetriever ─┐
  ├─ InputToChat ────────────────────┼─> ChatTemplate ──> ReactAgent ──> END
-                                    （系统 prompt + 历史 + RAG 上下文）
+                                    (system prompt + history + RAG context)
 ```
 
-- `InputToRag` / `InputToChat` 并行，`AllPredecessor` 聚合模式。
-- ReAct Agent（`flow.go` 的 `newReactAgentLambda`）绑定全部工具，`MaxStep = 25`，工具调用使用 Quick 模型。
-- 会话历史存于内存（`internal/memory`）：滑动窗口 6 条（成对丢弃保配对）+ 24h TTL + 10000 条容量上限。
+- `InputToRag` / `InputToChat` run in parallel, aggregated via `AllPredecessor`.
+- ReAct Agent (`newReactAgentLambda` in `flow.go`) binds all tools, `MaxStep = 25`, tool calls use the Quick model.
+- Session history is held in memory (`internal/memory`): sliding window of 6 messages (paired drop to preserve pairs) + 24h TTL + 10000-message capacity cap.
 
-### 文档索引流水线 `internal/biz/knowledge_index_pipeline`
+### Document indexing pipeline `internal/biz/knowledge_index_pipeline`
 
 ```
-FileLoader ──> MarkdownSplitter（按 # 标题切分，uuid 生成文档 ID）──> MilvusIndexer
+FileLoader ──> MarkdownSplitter (split by # headings, uuid for doc ID) ──> MilvusIndexer
 ```
 
-- 覆盖更新：`RebuildSource` 按 `metadata._source` 过滤删除旧数据后重建（上传与 CLI 共用）。
+- Overwrite update: `RebuildSource` filters and deletes old data by `metadata._source` then rebuilds (shared by upload and CLI).
 
-### AI 运维分析流水线 `internal/biz/plan_execute_replan`
+### AI ops analysis pipeline `internal/biz/plan_execute_replan`
 
-标准 **Plan → Execute → RePlan** 多轮 Agent（`plan_execute_replan.go` 的 `BuildPlanAgent`，基于 eino `adk/prebuilt/planexecute`）：
+Standard **Plan → Execute → RePlan** multi-turn Agent (`BuildPlanAgent` in `plan_execute_replan.go`, based on eino `adk/prebuilt/planexecute`):
 
-- Planner / Replanner：Think 模型（强推理，拆解长链路）。
-- Executor：Quick 模型（低延迟工具调用）+ 工具集；外层 `MaxIterations = 10`。
-- Executor 工具集（共 10 个）：6 个 CLS MCP 工具子集（`FilterLogMcpTools`）+ `query_prometheus_alerts` + `query_internal_docs` + `get_current_time` + `respond` 兜底工具。
-- 报告兜底：事件循环中通过 `isCompleteReport` 校验报告完整性并提前终止；若 Executor 误调用 `respond` 或 Replanner 直接返回报告，均经 `extractRespond` / `extractRespondFromToolCalls` 捕获，兜底优先级为 respond 报告 > `bestReport` > 末条 assistant 正文。
-- `flexiblePlan`：兼容小模型将 `steps` 输出为字符串化数组或单字符串的情形，自定义反序列化后喂给 Planner / Replanner。
+- Planner / Replanner: Think model (strong reasoning, breaks down long chains).
+- Executor: Quick model (low-latency tool calls) + toolset; outer `MaxIterations = 10`.
+- Executor toolset (10 total): 6 CLS MCP tool subset (`FilterLogMcpTools`) + `query_prometheus_alerts` + `query_internal_docs` + `get_current_time` + `respond` fallback tool.
+- Report fallback: in the event loop, `isCompleteReport` validates report completeness and terminates early; if the Executor mistakenly calls `respond` or the Replanner returns the report directly, both are captured via `extractRespond` / `extractRespondFromToolCalls`. Fallback priority: respond report > `bestReport` > last assistant message body.
+- `flexiblePlan`: tolerates small models outputting `steps` as a stringified array or single string; custom deserialization feeds the Planner / Replanner.
 
-### Agent 工具集 `internal/components/tools`
+### Agent toolset `internal/components/tools`
 
-| 工具 | 说明 | 注册范围 |
+| Tool | Description | Registration scope |
 |---|---|---|
-| `get_current_time` | 当前时间（秒/毫秒/微秒） | 对话 / AI Ops |
-| `query_internal_docs` | 内部文档 RAG 检索 | 对话 / AI Ops |
-| `query_log` | 腾讯云 CLS 日志 MCP（SSE） | 对话 / AI Ops |
-| `query_prometheus_alerts` | Prometheus 活跃告警 | 对话 / AI Ops |
-| `respond` | 兜底响应工具（避免 Executor 误调用报错） | 仅 AI Ops Executor |
-| `mysql_crud` | MySQL 查询/写入 | 仅离线 CLI（`cmd/llm_tool`），服务端不注册 |
+| `get_current_time` | Current time (sec/ms/μs) | chat / AI Ops |
+| `query_internal_docs` | Internal doc RAG retrieval | chat / AI Ops |
+| `query_log` | Tencent Cloud CLS log MCP (SSE) | chat / AI Ops |
+| `query_prometheus_alerts` | Prometheus active alerts | chat / AI Ops |
+| `respond` | Fallback response tool (avoid Executor miscall errors) | AI Ops Executor only |
+| `mysql_crud` | MySQL query/write | offline CLI only (`cmd/llm_tool`), not registered server-side |
 
-### MCP 集成 `internal/components/tools/query_log.go`
+### MCP integration `internal/components/tools/query_log.go`
 
-- `GetLogMcpTool` 通过 `sync.Once` 懒加载单例 `reconnectableToolGroup`，建立 mark3labs/mcp-go SSE 客户端，`Initialize` 后经 eino-ext `mcp.GetTools` 拉取工具列表。
-- 会话过期自动重连：`reconnectableTool` 按 `toolName` 动态路由到最新连接；调用遇会话错误（`isSessionError`）触发异步 `tryReconnect`，`reconnecting` 原子标志保证仅重建一次。
-- 优雅降级：CLS 工具返回 `IsError` 时经 `gracefulClsResultHandler` 转为「日志查询未返回数据（原因：…）请基于已获取的内部文档处理方案继续分析」文本结果，不中断 Agent。
+- `GetLogMcpTool` lazily loads a singleton `reconnectableToolGroup` via `sync.Once`, establishing a mark3labs/mcp-go SSE client; after `Initialize` it pulls the tool list via eino-ext `mcp.GetTools`.
+- Auto-reconnect on session expiry: `reconnectableTool` dynamically routes to the latest connection by `toolName`; on a session error (`isSessionError`) it triggers async `tryReconnect`, and the `reconnecting` atomic flag ensures only one rebuild.
+- Graceful degradation: when a CLS tool returns `IsError`, `gracefulClsResultHandler` converts it to the text "log query returned no data (reason: …) please continue analysis based on the internal-docs solution already obtained", without interrupting the Agent.
 
-### RAG 检索 `internal/components/vectorstore`
+### RAG retrieval `internal/components/vectorstore`
 
-- 向量：`text-embedding-v4`，**2048 维 FloatVector**，`L2` 度量（Milvus 集合 `biz`，库 `agent`）。
-- 切分：`markdown.NewHeaderSplitter` 按 `#` 标题层级切分，uuid 生成分片 ID。
-- 检索：TopK = 1；indexer / retriever 自定义 converter 输出 `float32` 向量，修正 eino-ext 默认「字节打包进 BinaryVector + Hamming」的语义错误。
-- 输出字段：`content`、`metadata`。
+- Vector: `text-embedding-v4`, **2048-dim FloatVector**, `L2` metric (Milvus collection `biz`, database `agent`).
+- Splitting: `markdown.NewHeaderSplitter` splits by `#` heading hierarchy, uuid for chunk ID.
+- Retrieval: TopK = 1; indexer / retriever custom converter outputs `float32` vectors, fixing eino-ext's default "byte-packed BinaryVector + Hamming" semantic error.
+- Output fields: `content`, `metadata`.
 
-## 技术栈
+## Tech Stack
 
-| 层 | 技术 |
+| Layer | Tech |
 |---|---|
-| HTTP | GoFrame v2.10.2（api / controller / service 分层） |
-| AI 编排 | cloudwego/eino v0.9.15（Graph + ReAct Agent + ADK prebuilt） |
-| LLM | OpenAI 兼容接口（默认火山方舟 DeepSeek-V4-flash，Think / Quick 双模型） |
-| Embedding | OpenAI 兼容接口（默认阿里百炼 text-embedding-v4，2048 维） |
-| 向量库 | Milvus 2.5.10（服务端），Go SDK v2.4.2（FloatVector + L2） |
-| Agent 工具 | 腾讯云 CLS 日志 MCP（SSE）+ 自研 Prometheus / 时间 / 文档工具 |
-| 可观测性 | slog JSON 日志 + 自研 Prometheus 指标 + 健康检查 |
-| 前端 | 原生 HTML/CSS/JS，SSE 流式，亮/暗双主题，DOMPurify 防 XSS，`//go:embed` 嵌入二进制 |
-| CI | GitHub Actions（vet + build + test） |
-| 语言 | Go 1.26+ |
+| HTTP | GoFrame v2.10.2 (api / controller / service layering) |
+| AI orchestration | cloudwego/eino v0.9.15 (Graph + ReAct Agent + ADK prebuilt) |
+| LLM | OpenAI-compatible API (default Volcengine Ark DeepSeek-V4-flash, Think / Quick dual-model) |
+| Embedding | OpenAI-compatible API (default Alibaba Bailian text-embedding-v4, 2048-dim) |
+| Vector DB | Milvus 2.5.10 (server), Go SDK v2.4.2 (FloatVector + L2) |
+| Agent tools | Tencent Cloud CLS log MCP (SSE) + self-built Prometheus / time / doc tools |
+| Observability | slog JSON logs + self-built Prometheus metrics + health checks |
+| Frontend | Plain HTML/CSS/JS, SSE streaming, light/dark themes, DOMPurify against XSS, `//go:embed` into binary |
+| CI | GitHub Actions (vet + build + test) |
+| Language | Go 1.26+ |
 
-## 目录结构
+## Directory Structure
 
 ```
-zebra-ops
-├── .github/workflows/         # CI（vet + build + test）
-├── api/chat/v1/               # GoFrame API DTO + g.Meta 路由标签
+Zebra Ops
+├── .github/workflows/         # CI (vet + build + test)
+├── api/chat/v1/               # GoFrame API DTO + g.Meta route tags
 ├── cmd/
-│   ├── server/                # HTTP 服务入口（main.go + 内嵌 static 前端）
-│   └── chat/ knowledge/ recall/ ai_ops/ llm_tool/   # 命令行工具
+│   ├── server/                # HTTP service entry (main.go + embedded static frontend)
+│   └── chat/ knowledge/ recall/ ai_ops/ llm_tool/   # CLI tools
 ├── internal/
-│   ├── controller/chat/       # HTTP Handler（参数校验 + 转发）
-│   ├── service/               # 业务编排（chat / upload / sse）
+│   ├── controller/chat/       # HTTP Handler (param validation + forward)
+│   ├── service/               # Business orchestration (chat / upload / sse)
 │   ├── biz/
-│   │   ├── chat_pipeline/            # 对话图（RAG + ReAct）
-│   │   ├── knowledge_index_pipeline/ # 文档索引图
-│   │   └── plan_execute_replan/      # AI Ops（Plan-Execute-RePlan）
+│   │   ├── chat_pipeline/            # Chat graph (RAG + ReAct)
+│   │   ├── knowledge_index_pipeline/ # Document index graph
+│   │   └── plan_execute_replan/      # AI Ops (Plan-Execute-RePlan)
 │   ├── components/           # llm / embedder / vectorstore / loader / tools / callbacks
-│   ├── memory/               # 内存会话（滑动窗口 + TTL）
-│   ├── middleware/           # CORS / request_id / 访问日志 / 指标 / 统一响应
-│   └── observability/        # 指标注册表 + 健康检查
+│   ├── memory/               # In-memory session (sliding window + TTL)
+│   ├── middleware/           # CORS / request_id / access log / metrics / unified response
+│   └── observability/        # Metrics registry + health checks
 ├── manifest/
-│   ├── config/               # config.yaml.example（config.yaml 已 gitignore）
-│   ├── docker/               # Dockerfile（multi-stage）
+│   ├── config/               # config.yaml.example (config.yaml gitignored)
+│   ├── docker/               # Dockerfile (multi-stage)
 │   └── deploy/milvus/        # Milvus docker-compose
-├── docs/                     # 文档与知识库种子文档
-├── mock/                     # 模拟告警数据（alerts.json 已 gitignore）
-└── storage/uploads/          # 上传文件落盘（运行时生成）
+├── docs/                     # Docs and knowledge-base seed docs
+├── mock/                     # Mock alert data (alerts.json gitignored)
+└── storage/uploads/          # Uploaded files on disk (generated at runtime)
 ```
 
-## API 参考
+## API Reference
 
-统一前缀 `/api`，统一响应 `{ "message": "...", "data": { ... } }`；`/healthz` `/readyz` `/metrics` 不在 `/api` 前缀下。
+Common prefix `/api`, unified response `{ "message": "...", "data": { ... } }`; `/healthz` `/readyz` `/metrics` are not under the `/api` prefix.
 
-| 方法 | 路径 | 入参 | 响应 data | 说明 |
+| Method | Path | Input | Response data | Description |
 |---|---|---|---|---|
-| POST | `/api/chat` | `{ Id, Question }` | `{ answer }` | 快速对话（RAG + ReAct） |
-| POST | `/api/chat_stream` | `{ Id, Question }` | SSE 事件流 | 流式对话（事件：`connected` / `message` / `done` / `error`） |
-| POST | `/api/upload` | multipart（`file`） | `{ fileName, filePath, fileSize }` | 文档上传建库（覆盖更新） |
-| POST | `/api/ai_ops` | `{ Id }` | `{ result, detail[] }` | AI 告警分析（同步，Plan Agent） |
-| POST | `/api/ai_ops_stream` | `{ Id }` | SSE 事件流 | AI 告警分析（SSE 实时进度 + 报告） |
-| GET | `/healthz` | - | `ok` | 存活探针 |
-| GET | `/readyz` | - | `ok` / 503 | 就绪探针（短超时探测 Milvus） |
-| GET | `/metrics` | - | Prometheus 文本 | 指标输出 |
+| POST | `/api/chat` | `{ Id, Question }` | `{ answer }` | Quick chat (RAG + ReAct) |
+| POST | `/api/chat_stream` | `{ Id, Question }` | SSE event stream | Streaming chat (events: `connected` / `message` / `done` / `error`) |
+| POST | `/api/upload` | multipart (`file`) | `{ fileName, filePath, fileSize }` | Document upload & index (overwrite update) |
+| POST | `/api/ai_ops` | `{ Id }` | `{ result, detail[] }` | AI alert analysis (sync, Plan Agent) |
+| POST | `/api/ai_ops_stream` | `{ Id }` | SSE event stream | AI alert analysis (SSE real-time progress + report) |
+| GET | `/healthz` | - | `ok` | Liveness probe |
+| GET | `/readyz` | - | `ok` / 503 | Readiness probe (short-timeout Milvus probe) |
+| GET | `/metrics` | - | Prometheus text | Metrics output |
 
-示例：
+Example:
 
 ```bash
 curl -X POST http://localhost:6872/api/chat \
   -H 'Content-Type: application/json' \
-  -d '{"Id": "session_1", "Question": "Zebra Ops 服务为什么下线？"}'
+  -d '{"Id": "session_1", "Question": "Why did the Zebra Ops service go down?"}'
 ```
 
-## 配置
+## Configuration
 
-### 配置加载机制
+### Config loading
 
-服务配置通过 GoFrame 配置组件从 `manifest/config/config.yaml` 读取。该文件已被 `.gitignore` 忽略，不入库；从 `config.yaml.example` 复制后填入本地实际值，敏感字段（API Key）在本地 `config.yaml` 中填写，密钥不进入版本库。
+Service config is read from `manifest/config/config.yaml` via the GoFrame config component. That file is gitignored and not in the repo; copy from `config.yaml.example` and fill in local values. Sensitive fields (API Key) are filled in the local `config.yaml`; secrets do not enter the repo.
 
-服务进程读取的操作系统环境变量仅 `LOG_DIR`（日志目录）。
+The only OS environment variable the service process reads is `LOG_DIR` (log directory).
 
-独立运行的 CLS 日志 MCP 服务（`cls-mcp-server`）通过环境变量 `TRANSPORT` / `PORT` / `TENCENTCLOUD_SECRET_ID` / `TENCENTCLOUD_SECRET_KEY` / `TENCENTCLOUD_REGION` 配置，可用 `.env` + `export` 注入，与 Go 服务配置相互独立。
+The standalone CLS log MCP service (`cls-mcp-server`) is configured via env vars `TRANSPORT` / `PORT` / `TENCENTCLOUD_SECRET_ID` / `TENCENTCLOUD_SECRET_KEY` / `TENCENTCLOUD_REGION`, injectable via `.env` + `export`, independent from the Go service config.
 
-### 配置项清单
+### Config items
 
-| config 键 | 环境变量 | 默认值 | 说明 |
+| config key | env var | default | description |
 |---|---|---|---|
-| `server.address` | - | `:6872` | HTTP 监听（代码 `SetPort(6872)` 同值） |
-| `think_chat_model.api_key` | `THINK_CHAT_MODEL_API_KEY` | 空 | Think 模型密钥（强推理/规划） |
-| `think_chat_model.base_url` | - | `https://ark.cn-beijing.volces.com/api/v3` | 火山方舟 OpenAI 兼容端点 |
-| `think_chat_model.model` | - | `DeepSeek-V4-flash` | Think 模型名 |
-| `quick_chat_model.*` | `QUICK_CHAT_MODEL_API_KEY` | 同上 | Quick 模型（低延迟执行） |
-| `embedding_model.api_key` | `EMBEDDING_MODEL_API_KEY` | 空 | 阿里百炼 DashScope 密钥 |
-| `embedding_model.base_url` | - | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Embedding 端点 |
-| `embedding_model.model` | - | `text-embedding-v4` | Embedding 模型（2048 维） |
-| `file_dir` | `FILE_DIR` | `./storage/uploads` | 上传落盘目录 |
-| `milvus_url` | `MILVUS_URL` | `localhost:19530` | Milvus 地址 |
-| `mcp_url` | - | `http://localhost:3000/sse` | CLS 日志 MCP SSE 端点 |
-| `prometheus_url` | `PROMETHEUS_URL` | 空 | Prometheus API（留空则降级 Mock 告警） |
+| `server.address` | - | `:6872` | HTTP listen (code `SetPort(6872)` same value) |
+| `think_chat_model.api_key` | `THINK_CHAT_MODEL_API_KEY` | empty | Think model key (strong reasoning/planning) |
+| `think_chat_model.base_url` | - | `https://ark.cn-beijing.volces.com/api/v3` | Volcengine Ark OpenAI-compatible endpoint |
+| `think_chat_model.model` | - | `DeepSeek-V4-flash` | Think model name |
+| `quick_chat_model.*` | `QUICK_CHAT_MODEL_API_KEY` | same as above | Quick model (low-latency execution) |
+| `embedding_model.api_key` | `EMBEDDING_MODEL_API_KEY` | empty | Alibaba Bailian DashScope key |
+| `embedding_model.base_url` | - | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Embedding endpoint |
+| `embedding_model.model` | - | `text-embedding-v4` | Embedding model (2048-dim) |
+| `file_dir` | `FILE_DIR` | `./storage/uploads` | Upload disk directory |
+| `milvus_url` | `MILVUS_URL` | `localhost:19530` | Milvus address |
+| `mcp_url` | - | `http://localhost:3000/sse` | CLS log MCP SSE endpoint |
+| `prometheus_url` | `PROMETHEUS_URL` | empty | Prometheus API (empty → mock alerts fallback) |
 
-### Mock 告警模式
+### Mock alert mode
 
-`query_prometheus_alerts` 在 `PROMETHEUS_URL` 为空时降级读取 `mock/alerts.json`，内置 4 类典型告警（服务下线 / 接口失败率过高 / 上下游对账差异 / 服务地域与资源地域不匹配），其 `activeAt` 按相对偏移动态生成，无需本地部署 Prometheus 即可完整体验 AI 运维分析。
+When `PROMETHEUS_URL` is empty, `query_prometheus_alerts` falls back to reading `mock/alerts.json`, which contains 4 typical alert types (service down / high interface failure rate / upstream-downstream reconciliation mismatch / service-region vs resource-region mismatch). Their `activeAt` is generated from relative offsets dynamically, so you can experience full AI ops analysis without deploying Prometheus locally.
 
-## 可观测性
+## Observability
 
-| 端点 / 机制 | 说明 |
+| Endpoint / mechanism | Description |
 |---|---|
-| `/healthz` | 存活探针，返回 `ok` |
-| `/readyz` | 就绪探针，3s 超时探测 Milvus 连通性，失败返回 503 |
-| `/metrics` | 自研零依赖 Prometheus 注册表（counter + histogram），文本格式输出 |
-| 指标 | `http_requests_total`（method/path/status）、`http_request_duration_seconds`（直方图桶 0.01–10s） |
-| 访问日志 | `X-Request-Id` 生成/透传 + slog JSON 结构化输出（method/path/status/duration_ms/remote_addr） |
+| `/healthz` | Liveness probe, returns `ok` |
+| `/readyz` | Readiness probe, 3s timeout Milvus connectivity probe, returns 503 on failure |
+| `/metrics` | Self-built zero-dependency Prometheus registry (counter + histogram), text format output |
+| Metrics | `http_requests_total` (method/path/status), `http_request_duration_seconds` (histogram buckets 0.01–10s) |
+| Access log | `X-Request-Id` generate/passthrough + slog JSON structured output (method/path/status/duration_ms/remote_addr) |
 
-## 快速开始
+## Quick Start
 
-### 1. 启动依赖（Milvus + Attu）
+### 1. Start dependencies (Milvus + Attu)
 
 ```bash
 cd manifest/deploy/milvus
 docker-compose up -d
-# Milvus: localhost:19530；Attu 管理台: http://localhost:8000
+# Milvus: localhost:19530; Attu console: http://localhost:8000
 ```
 
-### 2. 配置
+### 2. Configure
 
 ```bash
 cp manifest/config/config.yaml.example manifest/config/config.yaml
-# 编辑 manifest/config/config.yaml，填入真实 API Key 与端点
+# Edit manifest/config/config.yaml, fill in real API Key and endpoints
 ```
 
-### 3. 启动服务
+### 3. Start service
 
 ```bash
 go run ./cmd/server
-# 监听 6872 端口，前端已内嵌到二进制，访问 http://localhost:6872
+# Listens on port 6872, frontend embedded in binary, visit http://localhost:6872
 ```
 
-### 4. 命令行工具
+### 4. CLI tools
 
 ```bash
-go run ./cmd/knowledge   # 索引 docs/ 下 md 文档到知识库
-go run ./cmd/chat        # 演示多轮对话
-go run ./cmd/recall      # 演示向量召回
-go run ./cmd/ai_ops      # 演示 AI 告警分析
-go run ./cmd/llm_tool    # 演示 MCP + 自定义工具绑定
+go run ./cmd/knowledge   # Index md docs under docs/ into knowledge base
+go run ./cmd/chat        # Demo multi-turn chat
+go run ./cmd/recall      # Demo vector recall
+go run ./cmd/ai_ops      # Demo AI alert analysis
+go run ./cmd/llm_tool    # Demo MCP + custom tool binding
 ```
 
-## 构建与部署
+## Build & Deploy
 
-`manifest/docker/Dockerfile`（multi-stage）：Go 编译 + 精简运行镜像，静态资源内嵌，无需单独分发前端。
+`manifest/docker/Dockerfile` (multi-stage): Go compile + slim runtime image, static assets embedded, no separate frontend distribution needed.
 
-## 开发
+## Development
 
-- 单元测试：`go test ./...`
-- CI（`.github/workflows/ci.yml`）：push / PR 触发 `go vet` + `go build` + `go test`，Milvus 集成测试在无环境时自动跳过。
+- Unit tests: `go test ./...`
+- CI (`.github/workflows/ci.yml`): push / PR triggers `go vet` + `go build` + `go test`; Milvus integration tests auto-skip when no environment.
 
 ## License
 
